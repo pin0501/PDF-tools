@@ -46,6 +46,29 @@
         #preview-modal {
             transition: opacity 0.2s ease-in-out;
         }
+        /* 下拉選單統一風格 */
+        .tw-select {
+            width: 100%;
+            padding: 0.75rem;
+            background-color: #f9fafb;
+            border: 1px solid #d1d5db;
+            border-radius: 0.75rem;
+            color: #374151;
+            font-weight: 500;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+            transition: all 0.15s ease-in-out;
+            appearance: none;
+        }
+        .tw-select:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+        .tw-select:disabled {
+            background-color: #f3f4f6;
+            color: #9ca3af;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans min-h-screen flex items-center justify-center">
@@ -85,14 +108,11 @@
                 <div>
                     <label for="layout-select" class="block text-sm font-semibold text-gray-700 mb-2">1. 版面配置：</label>
                     <div class="relative">
-                        <select id="layout-select" class="w-full p-3 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
+                        <select id="layout-select" class="tw-select">
                             <option value="fast" selected>僅合併 (最快，預設)</option>
                             <option value="Portrait">統一為直向</option>
                             <option value="Landscape">統一為橫向</option>
                         </select>
-                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-700">
-                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-                        </div>
                     </div>
                 </div>
 
@@ -100,15 +120,12 @@
                 <div>
                     <label for="page-size-select" class="block text-sm font-semibold text-gray-700 mb-2">2. 頁面大小 (若統一)：</label>
                     <div class="relative">
-                        <select id="page-size-select" class="w-full p-3 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none" disabled>
+                        <select id="page-size-select" class="tw-select" disabled>
                             <option value="A4" selected>A4</option>
                             <option value="A3">A3</option>
                             <option value="A5">A5</option>
                             <option value="Letter">Letter</option>
                         </select>
-                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-700">
-                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-                        </div>
                     </div>
                 </div>
 
@@ -116,13 +133,10 @@
                 <div id="rotation-select-container" class="hidden">
                     <label for="rotation-select" class="block text-sm font-semibold text-gray-700 mb-2">3. 不同方向頁面旋轉：</label>
                     <div class="relative">
-                        <select id="rotation-select" class="w-full p-3 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
+                        <select id="rotation-select" class="tw-select">
                             <option value="CW" selected>自動 (順時針 +90°)</option>
                             <option value="CCW">逆時針 (-90°)</option>
                         </select>
-                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-700">
-                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-                        </div>
                     </div>
                 </div>
 
@@ -153,7 +167,10 @@
                 <h3 id="preview-title" class="text-lg font-semibold text-gray-800">預覽檔案</h3>
                 <div class="flex items-center space-x-3">
                     <button id="download-preview-btn" class="text-blue-600 hover:text-blue-800 hidden" title="下載預覽檔">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12"></path></svg>
+                        <span class="inline-flex items-center space-x-2 text-sm font-semibold">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12"></path></svg>
+                            <span>下載</span>
+                        </span>
                     </button>
                     <button id="close-preview-btn" class="text-gray-500 hover:text-gray-800">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -175,6 +192,11 @@
         const downloadPreviewBtn = document.getElementById('download-preview-btn');
         const outputNameInput = document.getElementById('output-name');
         const outputNameContainer = document.getElementById('output-name-container');
+        const ensurePdfExtension = (name) => {
+            const trimmed = (name || '').trim();
+            const base = trimmed.length ? trimmed : 'merged_document';
+            return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
+        };
 
         // 定義標準頁面大小 (Portrait, Landscape)
         const PAGE_SIZES = {
@@ -421,10 +443,10 @@
  
 // 設定 iframe 和標題
             previewIframe.src = currentPreviewUrl;
-            previewTitle.textContent = `預覽：${fileInfo.name}`;
-            previewIsMerged = false;
-            currentPreviewFilename = fileInfo.name;
-            downloadPreviewBtn.classList.remove('hidden');
+             previewTitle.textContent = `預覽：${fileInfo.name}`;
+             previewIsMerged = false;
+             currentPreviewFilename = fileInfo.name;
+             downloadPreviewBtn.classList.remove('hidden');
  
              // 顯示 Modal
              previewModal.classList.remove('hidden');
@@ -452,16 +474,18 @@
         closePreviewBtn.addEventListener('click', closePreviewModal);
         // 下載 Modal 中目前的預覽（單一檔或合併結果）
         downloadPreviewBtn.addEventListener('click', () => {
-            if (!currentPreviewUrl) return;
-            const filename = currentPreviewFilename || outputNameInput.value || 'preview.pdf';
-            const a = document.createElement('a');
-            a.href = currentPreviewUrl;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            // 若是合併預覽，不自動關閉 Modal（讓使用者決定）
-        });
+             if (!currentPreviewUrl) return;
+             const filename = previewIsMerged ? ensurePdfExtension(outputNameInput.value) : ensurePdfExtension(currentPreviewFilename);
+             const a = document.createElement('a');
+             a.href = currentPreviewUrl;
+             a.download = filename;
+             document.body.appendChild(a);
+             a.click();
+             document.body.removeChild(a);
+             if (previewIsMerged) {
+                closePreviewModal();
+             }
+         });
  
  
          // --- 合併按鈕事件 (v18 核心邏輯) ---
@@ -619,16 +643,16 @@
                 }
                 currentPreviewUrl = URL.createObjectURL(blob);
                 // 取得使用者輸入的檔名（若為空則使用預設）
-                const outName = (outputNameInput && outputNameInput.value.trim()) ? outputNameInput.value.trim() : 'merged_document.pdf';
+                const outName = ensurePdfExtension(outputNameInput ? outputNameInput.value : '');
                 currentPreviewFilename = outName;
-                // 設定 iframe 與標題
-                previewIframe.src = currentPreviewUrl;
-                previewTitle.textContent = `合併預覽：${outName}`;
-                previewIsMerged = true;
-                downloadPreviewBtn.classList.remove('hidden');
-                // 顯示 Modal（淡入）
-                previewModal.classList.remove('hidden');
-                setTimeout(() => previewModal.classList.remove('opacity-0'), 10);
+                 // 設定 iframe 與標題
+                 previewIframe.src = currentPreviewUrl;
+                 previewTitle.textContent = `合併預覽：${outName}`;
+                 previewIsMerged = true;
+                 downloadPreviewBtn.classList.remove('hidden');
+                 // 顯示 Modal（淡入）
+                 previewModal.classList.remove('hidden');
+                 setTimeout(() => previewModal.classList.remove('opacity-0'), 10);
  
                  if (failedFiles > 0 || failedPages > 0) {
                      status.textContent = `處理完成！(成功 ${successPages} 頁，${failedPages} 頁因錯誤被跳過)`;
