@@ -130,6 +130,12 @@
         </div>
 
         <!-- 合併按鈕 -->
+        <!-- 輸出檔名（預命名） -->
+        <div id="output-name-container" class="mb-4 hidden">
+            <label for="output-name" class="block text-sm font-semibold text-gray-700 mb-2">輸出檔名：</label>
+            <input id="output-name" class="w-full p-3 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" type="text" value="merged_document.pdf">
+        </div>
+
         <button id="merge-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors shadow-md disabled:bg-gray-300" disabled>
             合併 PDF
         </button>
@@ -145,9 +151,14 @@
             <!-- Modal 標題和關閉按鈕 -->
             <div class="flex justify-between items-center p-4 border-b">
                 <h3 id="preview-title" class="text-lg font-semibold text-gray-800">預覽檔案</h3>
-                <button id="close-preview-btn" class="text-gray-500 hover:text-gray-800">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
+                <div class="flex items-center space-x-3">
+                    <button id="download-preview-btn" class="text-blue-600 hover:text-blue-800 hidden" title="下載預覽檔">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12"></path></svg>
+                    </button>
+                    <button id="close-preview-btn" class="text-gray-500 hover:text-gray-800">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
             </div>
             <!-- Modal 內容 (iframe) -->
             <div class="flex-grow p-4 bg-gray-100">
@@ -159,6 +170,11 @@
 
     <script>
         const { PDFDocument, degrees } = PDFLib;
+        // 目前 Modal 是否顯示合併檔的預覽（vs 單一檔案預覽）
+        let previewIsMerged = false;
+        const downloadPreviewBtn = document.getElementById('download-preview-btn');
+        const outputNameInput = document.getElementById('output-name');
+        const outputNameContainer = document.getElementById('output-name-container');
 
         // 定義標準頁面大小 (Portrait, Landscape)
         const PAGE_SIZES = {
@@ -190,6 +206,7 @@
         let fileDataStore = []; // 儲存 { name, data, originalIndex, orientation }
         let sortableInstance = null; // 存放 Sortable 實體
         let currentPreviewUrl = null; // [v20] 儲存當前的預覽 URL 以便釋放
+        let currentPreviewFilename = null; // 儲存供下載的檔名
 
         // --- [v18] UI 連動 ---
         layoutSelect.addEventListener('change', () => {
@@ -310,9 +327,17 @@
                         `;
                         fileList.appendChild(li);
                     });
-
-                    mergeBtn.disabled = false;
-                    status.textContent = '檔案已載入，請拖曳排序。';
+ 
+                    // 顯示輸出檔名輸入（並預設名稱）
+                    outputNameContainer.classList.remove('hidden');
+                    // 自動生成較友善的預設檔名：merged_YYYYMMDD_HHMMSS.pdf
+                    const now = new Date();
+                    const pad = (n) => String(n).padStart(2, '0');
+                    const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+                    outputNameInput.value = `merged_${ts}.pdf`;
+ 
+                     mergeBtn.disabled = false;
+                     status.textContent = '檔案已載入，請拖曳排序。';
 
                     // 初始化拖曳
                     if (sortableInstance) sortableInstance.destroy();
@@ -333,6 +358,7 @@
                 fileListContainer.classList.add('hidden');
                 optionsContainer.classList.add('hidden');
                 mergeBtn.disabled = true;
+                outputNameContainer.classList.add('hidden');
                 if (sortableInstance) {
                     sortableInstance.destroy();
                     sortableInstance = null;
@@ -360,6 +386,7 @@
                     fileListContainer.classList.add('hidden');
                     optionsContainer.classList.add('hidden');
                     mergeBtn.disabled = true;
+                    outputNameContainer.classList.add('hidden');
                     status.textContent = '所有檔案均已移除。';
                 }
                 return; // 結束，避免觸發預覽
@@ -387,20 +414,23 @@
             if (currentPreviewUrl) {
                 URL.revokeObjectURL(currentPreviewUrl);
             }
-
+ 
             // 建立新的 Blob URL
             const blob = new Blob([fileInfo.data], { type: 'application/pdf' });
             currentPreviewUrl = URL.createObjectURL(blob);
-
-            // 設定 iframe 和標題
+ 
+// 設定 iframe 和標題
             previewIframe.src = currentPreviewUrl;
             previewTitle.textContent = `預覽：${fileInfo.name}`;
-
-            // 顯示 Modal
-            previewModal.classList.remove('hidden');
-            setTimeout(() => previewModal.classList.remove('opacity-0'), 10); // 觸發淡入
-        }
-
+            previewIsMerged = false;
+            currentPreviewFilename = fileInfo.name;
+            downloadPreviewBtn.classList.remove('hidden');
+ 
+             // 顯示 Modal
+             previewModal.classList.remove('hidden');
+             setTimeout(() => previewModal.classList.remove('opacity-0'), 10); // 觸發淡入
+         }
+ 
         // --- [v20] 關閉預覽 Modal ---
         function closePreviewModal() {
             // 淡出
@@ -420,10 +450,22 @@
         }
 
         closePreviewBtn.addEventListener('click', closePreviewModal);
-
-
-        // --- 合併按鈕事件 (v18 核心邏輯) ---
-        mergeBtn.addEventListener('click', async () => {
+        // 下載 Modal 中目前的預覽（單一檔或合併結果）
+        downloadPreviewBtn.addEventListener('click', () => {
+            if (!currentPreviewUrl) return;
+            const filename = currentPreviewFilename || outputNameInput.value || 'preview.pdf';
+            const a = document.createElement('a');
+            a.href = currentPreviewUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            // 若是合併預覽，不自動關閉 Modal（讓使用者決定）
+        });
+ 
+ 
+         // --- 合併按鈕事件 (v18 核心邏輯) ---
+         mergeBtn.addEventListener('click', async () => {
             if (fileList.querySelectorAll('li').length < 1) {
                 status.textContent = '請至少選擇一個 PDF 檔案。';
                 return;
@@ -569,27 +611,42 @@
                 // 7. 儲存並下載
                 const mergedPdfBytes = await mergedPdf.save();
                 const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = 'merged_document.pdf'; 
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                
-                if (failedFiles > 0 || failedPages > 0) {
-                    status.textContent = `處理完成！(成功 ${successPages} 頁，${failedPages} 頁因錯誤被跳過)`;
-                } else {
-                    status.textContent = `處理完成！(共 ${successPages} 頁)`;
+
+                // 先預覽合併結果，再讓使用者下載
+                // 防止記憶體洩漏：釋放先前的預覽 URL（若有）
+                if (currentPreviewUrl) {
+                    URL.revokeObjectURL(currentPreviewUrl);
                 }
-                mergeBtn.disabled = false;
-
-            } catch (error) {
-                console.error("合併過程中發生未預期的錯誤:", error);
-                status.textContent = `發生致命錯誤：${error.message}`;
-                mergeBtn.disabled = false;
-            }
-        });
-    </script>
-
-</body>
-</html>
+                currentPreviewUrl = URL.createObjectURL(blob);
+                // 取得使用者輸入的檔名（若為空則使用預設）
+                const outName = (outputNameInput && outputNameInput.value.trim()) ? outputNameInput.value.trim() : 'merged_document.pdf';
+                currentPreviewFilename = outName;
+                // 設定 iframe 與標題
+                previewIframe.src = currentPreviewUrl;
+                previewTitle.textContent = `合併預覽：${outName}`;
+                previewIsMerged = true;
+                downloadPreviewBtn.classList.remove('hidden');
+                // 顯示 Modal（淡入）
+                previewModal.classList.remove('hidden');
+                setTimeout(() => previewModal.classList.remove('opacity-0'), 10);
+ 
+                 if (failedFiles > 0 || failedPages > 0) {
+                     status.textContent = `處理完成！(成功 ${successPages} 頁，${failedPages} 頁因錯誤被跳過)`;
+                 } else {
+                     status.textContent = `處理完成！(共 ${successPages} 頁)`;
+                 }
+                 mergeBtn.disabled = false;
+ 
+             } catch (error) {
+                 console.error("合併過程中發生未預期的錯誤:", error);
+                 status.textContent = `發生致命錯誤：${error.message}`;
+                 mergeBtn.disabled = false;
+             }
+     });
+    
+    // 當 Modal 關閉時，若是合併預覽且使用者未下載，可保留或釋放 URL
+    // 目前 closePreviewModal 會釋放 currentPreviewUrl，因此無需額外處理
+ </script>
+ 
+ </body>
+ </html>
