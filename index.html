@@ -10,6 +10,8 @@
     <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <!-- 載入 Sortable.js (拖曳排序功能) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <!-- 載入 PDF.js (內嵌預覽) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.9.179/pdf.min.js"></script>
     <style>
         .file-input-wrapper {
             position: relative;
@@ -29,12 +31,24 @@
             cursor: pointer;
         }
         .sortable-ghost {
-            background-color: #ebf8ff;
-            opacity: 0.7;
-            border: 2px dashed #3182ce;
+            background-color: #e1effe;
+            opacity: 0.85;
+            border: 2px dashed #2563eb;
+            transform: scale(1.02) rotate(-1deg);
+            box-shadow: 0 10px 25px rgba(37, 99, 235, 0.2);
         }
         .sortable-chosen {
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.15);
+            transform: scale(1.01);
+        }
+        .sortable-drag {
+            cursor: grabbing !important;
+        }
+        #file-list.sorting li {
+            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+        }
+        #file-list.sorting li:not(.sortable-ghost) {
+            opacity: 0.9;
         }
         /* 禁用下拉選單的樣式 */
         select:disabled {
@@ -45,6 +59,18 @@
         /* [v20] 預覽 Modal 樣式 */
         #preview-modal {
             transition: opacity 0.2s ease-in-out;
+        }
+        #pdf-canvas {
+            background-color: #fff;
+            border-radius: 0.75rem;
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+        }
+        #pdf-loader {
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.45; }
+            50% { opacity: 1; }
         }
         /* 下拉選單統一風格 */
         .tw-select {
@@ -162,7 +188,6 @@
     <!-- [v20] 預覽 Modal -->
     <div id="preview-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden opacity-0">
         <div class="bg-white rounded-lg shadow-2xl w-full h-full max-w-4xl max-h-[90vh] flex flex-col">
-            <!-- Modal 標題和關閉按鈕 -->
             <div class="flex justify-between items-center p-4 border-b">
                 <h3 id="preview-title" class="text-lg font-semibold text-gray-800">預覽檔案</h3>
                 <div class="flex items-center space-x-3">
@@ -177,9 +202,25 @@
                     </button>
                 </div>
             </div>
-            <!-- Modal 內容 (iframe) -->
-            <div class="flex-grow p-4 bg-gray-100">
-                <iframe id="preview-iframe" class="w-full h-full border-0" src="about:blank"></iframe>
+            <div class="flex items-center justify-between px-4 py-2 border-b bg-gray-50 text-sm text-gray-600">
+                <div class="flex items-center space-x-2">
+                    <button id="prev-page-btn" class="flex items-center justify-center w-8 h-8 rounded-full border border-gray-300 text-gray-500 hover:text-blue-600 hover:border-blue-400 transition disabled:opacity-50" disabled>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    </button>
+                    <span id="page-info">第 <span id="current-page">0</span> / <span id="total-pages">0</span> 頁</span>
+                    <button id="next-page-btn" class="flex items-center justify-center w-8 h-8 rounded-full border border-gray-300 text-gray-500 hover:text-blue-600 hover:border-blue-400 transition disabled:opacity-50" disabled>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    </button>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="zoom-out-btn" class="px-3 py-1.5 rounded-md border border-gray-300 text-gray-600 hover:text-blue-600 hover:border-blue-400 transition disabled:opacity-50" disabled>-</button>
+                    <span id="zoom-percent" class="text-sm font-semibold text-gray-600">100%</span>
+                    <button id="zoom-in-btn" class="px-3 py-1.5 rounded-md border border-gray-300 text-gray-600 hover:text-blue-600 hover:border-blue-400 transition disabled:opacity-50" disabled>+</button>
+                </div>
+            </div>
+            <div class="flex-grow bg-gray-100 flex items-center justify-center overflow-auto p-4">
+                <div id="pdf-loader" class="text-gray-500 text-sm hidden">正在載入預覽...</div>
+                <canvas id="pdf-canvas" class="max-h-full hidden"></canvas>
             </div>
         </div>
     </div>
@@ -187,7 +228,10 @@
 
     <script>
         const { PDFDocument, degrees } = PDFLib;
-        // 目前 Modal 是否顯示合併檔的預覽（vs 單一檔案預覽）
+        const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
+        if (pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.9.179/pdf.worker.min.js';
+        }
         let previewIsMerged = false;
         const downloadPreviewBtn = document.getElementById('download-preview-btn');
         const outputNameInput = document.getElementById('output-name');
@@ -198,7 +242,6 @@
             return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
         };
 
-        // 定義標準頁面大小 (Portrait, Landscape)
         const PAGE_SIZES = {
             'A4': { 'Portrait': [595.28, 841.89], 'Landscape': [841.89, 595.28] },
             'A3': { 'Portrait': [841.89, 1190.55], 'Landscape': [1190.55, 841.89] },
@@ -212,36 +255,47 @@
         const optionsContainer = document.getElementById('options-container'); 
         const mergeBtn = document.getElementById('merge-btn');
         const status = document.getElementById('status');
-        
-        // v18 UI 元素
         const layoutSelect = document.getElementById('layout-select');
         const pageSizeSelect = document.getElementById('page-size-select');
         const rotationSelectContainer = document.getElementById('rotation-select-container');
         const rotationSelect = document.getElementById('rotation-select');
-
-        // [v20] Modal 元素
         const previewModal = document.getElementById('preview-modal');
         const closePreviewBtn = document.getElementById('close-preview-btn');
-        const previewIframe = document.getElementById('preview-iframe');
         const previewTitle = document.getElementById('preview-title');
+        const pdfCanvas = document.getElementById('pdf-canvas');
+        const pdfContext = pdfCanvas.getContext('2d');
+        const pdfLoader = document.getElementById('pdf-loader');
+        const prevPageBtn = document.getElementById('prev-page-btn');
+        const nextPageBtn = document.getElementById('next-page-btn');
+        const currentPageLabel = document.getElementById('current-page');
+        const totalPagesLabel = document.getElementById('total-pages');
+        const zoomOutBtn = document.getElementById('zoom-out-btn');
+        const zoomInBtn = document.getElementById('zoom-in-btn');
+        const zoomPercentLabel = document.getElementById('zoom-percent');
         
-        let fileDataStore = []; // 儲存 { name, data, originalIndex, orientation }
-        let sortableInstance = null; // 存放 Sortable 實體
-        let currentPreviewUrl = null; // [v20] 儲存當前的預覽 URL 以便釋放
-        let currentPreviewFilename = null; // 儲存供下載的檔名
+        let fileDataStore = [];
+        let sortableInstance = null;
+        let currentPreviewUrl = null;
+        let currentPreviewFilename = null;
+        let pdfDocInstance = null;
+        let pdfRenderTask = null;
+        let pdfCurrentPage = 1;
+        let pdfTotalPages = 0;
+        let pdfCurrentScale = 1;
+        const MIN_ZOOM = 0.6;
+        const MAX_ZOOM = 2.6;
+        const ZOOM_STEP = 0.2;
 
-        // --- [v18] UI 連動 ---
         layoutSelect.addEventListener('change', () => {
             if (layoutSelect.value === 'fast') {
                 pageSizeSelect.disabled = true;
-                rotationSelectContainer.classList.add('hidden'); // 隱藏旋轉選項
+                rotationSelectContainer.classList.add('hidden');
             } else {
                 pageSizeSelect.disabled = false;
-                rotationSelectContainer.classList.remove('hidden'); // 顯示旋轉選項
+                rotationSelectContainer.classList.remove('hidden');
             }
         });
 
-        // --- [v19] 輔助函式：根據方向取得標籤顏色 ---
         function getOrientationBadge(orientation) {
             switch (orientation) {
                 case "直向":
@@ -259,11 +313,8 @@
             }
         }
 
-        // --- 檔案上傳事件 (v19 重構) ---
         fileUpload.addEventListener('change', async (e) => {
             const files = Array.from(e.target.files); 
-            
-            // 重置 UI 和資料儲存
             fileList.innerHTML = '';
             fileDataStore = [];
             
@@ -274,14 +325,12 @@
                 optionsContainer.classList.add('hidden');
 
                 try {
-                    // [v19] 平行讀取所有檔案並辨識方向
                     fileDataStore = await Promise.all(
                         files.map(async (file, index) => {
                             const data = await file.arrayBuffer(); 
                             let orientationLabel = "未知";
 
                             try {
-                                // [v19] 立即載入 PDF 以進行辨識
                                 const pdfDoc = await PDFDocument.load(data);
                                 const pages = pdfDoc.getPages();
                                 let portraitCount = 0;
@@ -315,14 +364,13 @@
                             
                             return {
                                 name: file.name,
-                                data: data, // 我們保留 arrayBuffer 以便後續合併
+                                data: data,
                                 originalIndex: index,
                                 orientation: orientationLabel
                             };
                         })
                     );
                     
-                    // [v19] 更新 UI 列表
                     fileListContainer.classList.remove('hidden');
                     optionsContainer.classList.remove('hidden');
                     
@@ -330,8 +378,6 @@
                         const li = document.createElement('li');
                         li.dataset.originalIndex = fileInfo.originalIndex;
                         li.className = 'text-gray-700 p-3 bg-white border rounded-md shadow-sm flex items-center justify-between select-none';
-                        
-                        // [v20] 列表項目的 HTML (包含拖曳、名稱、標籤、預覽、刪除)
                         li.innerHTML = `
                             <div class="flex items-center min-w-0">
                                 <svg class="w-5 h-5 text-gray-400 mr-3 flex-shrink-0 cursor-move" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
@@ -350,23 +396,25 @@
                         fileList.appendChild(li);
                     });
  
-                    // 顯示輸出檔名輸入（並預設名稱）
                     outputNameContainer.classList.remove('hidden');
-                    // 自動生成較友善的預設檔名：merged_YYYYMMDD_HHMMSS.pdf
                     const now = new Date();
                     const pad = (n) => String(n).padStart(2, '0');
                     const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
                     outputNameInput.value = `merged_${ts}.pdf`;
  
-                     mergeBtn.disabled = false;
-                     status.textContent = '檔案已載入，請拖曳排序。';
+                    mergeBtn.disabled = false;
+                    status.textContent = '檔案已載入，請拖曳排序。';
 
-                    // 初始化拖曳
                     if (sortableInstance) sortableInstance.destroy();
                     sortableInstance = new Sortable(fileList, {
-                        animation: 150, 
-                        ghostClass: 'sortable-ghost', 
-                        chosenClass: 'sortable-chosen', 
+                        animation: 180,
+                        ghostClass: 'sortable-ghost',
+                        chosenClass: 'sortable-chosen',
+                        dragClass: 'sortable-drag',
+                        fallbackOnBody: true,
+                        swapThreshold: 0.6,
+                        onStart: () => fileList.classList.add('sorting'),
+                        onEnd: () => fileList.classList.remove('sorting'),
                     });
 
                 } catch (error) {
@@ -376,7 +424,6 @@
                 }
 
             } else {
-                // 沒有選擇檔案，重置 UI
                 fileListContainer.classList.add('hidden');
                 optionsContainer.classList.add('hidden');
                 mergeBtn.disabled = true;
@@ -388,22 +435,14 @@
             }
         });
 
-        // --- [v21] 檔案列表點擊事件 (包含刪除 & 預覽修正) ---
         fileList.addEventListener('click', (e) => {
             const deleteBtn = e.target.closest('.delete-btn');
             const previewBtn = e.target.closest('.preview-btn');
             
-            // 處理刪除
             if (deleteBtn) {
                 const indexToDelete = parseInt(deleteBtn.dataset.indexToDelete, 10);
-                
-                // 1. 從資料儲存中移除
                 fileDataStore = fileDataStore.filter(f => f.originalIndex !== indexToDelete);
-                
-                // 2. 從 DOM 中移除
                 deleteBtn.closest('li').remove();
-                
-                // 3. 檢查是否清空
                 if (fileDataStore.length === 0) {
                     fileListContainer.classList.add('hidden');
                     optionsContainer.classList.add('hidden');
@@ -411,85 +450,97 @@
                     outputNameContainer.classList.add('hidden');
                     status.textContent = '所有檔案均已移除。';
                 }
-                return; // 結束，避免觸發預覽
+                return;
             }
 
-            // 處理預覽
             if (previewBtn) {
                 const indexToPreview = parseInt(previewBtn.dataset.indexToPreview, 10);
                 const fileInfo = fileDataStore.find(f => f.originalIndex === indexToPreview);
                 
                 if (fileInfo) {
-                    // [v21] 檢查檔案是否已損壞
                     if (fileInfo.orientation === "已損壞") {
                         status.textContent = `無法預覽：檔案 "${fileInfo.name}" 已損壞。`;
                         return;
                     }
-                    showPreviewModal(fileInfo);
+                    showPreviewModal(fileInfo).catch(err => {
+                        console.error('預覽失敗:', err);
+                        status.textContent = `預覽失敗：${err.message}`;
+                    });
                 }
             }
         });
 
-        // --- [v20] 顯示預覽 Modal ---
-        function showPreviewModal(fileInfo) {
-            // 防止記憶體洩漏：如果已存在一個 URL，先釋放它
+        async function showPreviewModal(fileInfo) {
+            if (!pdfjsLib) {
+                throw new Error('PDF.js 載入失敗，請重新整理頁面。');
+            }
             if (currentPreviewUrl) {
                 URL.revokeObjectURL(currentPreviewUrl);
             }
- 
-            // 建立新的 Blob URL
-            const blob = new Blob([fileInfo.data], { type: 'application/pdf' });
+            const bytes = fileInfo.data instanceof Uint8Array ? fileInfo.data : new Uint8Array(fileInfo.data);
+            const blob = new Blob([bytes], { type: 'application/pdf' });
             currentPreviewUrl = URL.createObjectURL(blob);
- 
-// 設定 iframe 和標題
-            previewIframe.src = currentPreviewUrl;
-             previewTitle.textContent = `預覽：${fileInfo.name}`;
-             previewIsMerged = false;
-             currentPreviewFilename = fileInfo.name;
-             downloadPreviewBtn.classList.remove('hidden');
- 
-             // 顯示 Modal
-             previewModal.classList.remove('hidden');
-             setTimeout(() => previewModal.classList.remove('opacity-0'), 10); // 觸發淡入
-         }
- 
-        // --- [v20] 關閉預覽 Modal ---
+
+            await openPdfViewer({
+                bytes,
+                title: `預覽：${fileInfo.name}`,
+                filename: fileInfo.name,
+                isMerged: false,
+            });
+        }
+
         function closePreviewModal() {
-            // 淡出
             previewModal.classList.add('opacity-0');
             setTimeout(() => {
                 previewModal.classList.add('hidden');
-                
-                // 釋放記憶體
                 if (currentPreviewUrl) {
                     URL.revokeObjectURL(currentPreviewUrl);
                     currentPreviewUrl = null;
                 }
-                // 清空 iframe
-                previewIframe.src = 'about:blank';
+                resetPdfViewer();
                 previewTitle.textContent = '預覽檔案';
-            }, 200); // 配合 transition-duration
+            }, 200);
         }
 
         closePreviewBtn.addEventListener('click', closePreviewModal);
-        // 下載 Modal 中目前的預覽（單一檔或合併結果）
+
         downloadPreviewBtn.addEventListener('click', () => {
-             if (!currentPreviewUrl) return;
-             const filename = previewIsMerged ? ensurePdfExtension(outputNameInput.value) : ensurePdfExtension(currentPreviewFilename);
-             const a = document.createElement('a');
-             a.href = currentPreviewUrl;
-             a.download = filename;
-             document.body.appendChild(a);
-             a.click();
-             document.body.removeChild(a);
-             if (previewIsMerged) {
+            if (!currentPreviewUrl) return;
+            const filename = previewIsMerged ? ensurePdfExtension(outputNameInput.value) : ensurePdfExtension(currentPreviewFilename);
+            const a = document.createElement('a');
+            a.href = currentPreviewUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            if (previewIsMerged) {
                 closePreviewModal();
-             }
-         });
- 
- 
-         // --- 合併按鈕事件 (v18 核心邏輯) ---
-         mergeBtn.addEventListener('click', async () => {
+            }
+        });
+
+        prevPageBtn.addEventListener('click', () => {
+            if (!pdfDocInstance || pdfCurrentPage <= 1) return;
+            renderPdfPage(pdfCurrentPage - 1);
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            if (!pdfDocInstance || pdfCurrentPage >= pdfTotalPages) return;
+            renderPdfPage(pdfCurrentPage + 1);
+        });
+
+        zoomOutBtn.addEventListener('click', () => {
+            if (!pdfDocInstance) return;
+            pdfCurrentScale = Math.max(MIN_ZOOM, pdfCurrentScale - ZOOM_STEP);
+            renderPdfPage(pdfCurrentPage);
+        });
+
+        zoomInBtn.addEventListener('click', () => {
+            if (!pdfDocInstance) return;
+            pdfCurrentScale = Math.min(MAX_ZOOM, pdfCurrentScale + ZOOM_STEP);
+            renderPdfPage(pdfCurrentPage);
+        });
+
+        mergeBtn.addEventListener('click', async () => {
             if (fileList.querySelectorAll('li').length < 1) {
                 status.textContent = '請至少選擇一個 PDF 檔案。';
                 return;
@@ -499,47 +550,37 @@
                 status.textContent = '處理中... 請稍候...';
                 mergeBtn.disabled = true;
 
-                // 1. 獲取 UI 選項
                 const layoutKey = layoutSelect.value;
                 const sizeKey = pageSizeSelect.value;
-                const rotationKey = rotationSelect.value; // "CW" or "CCW"
+                const rotationKey = rotationSelect.value;
 
-                // 2. 獲取排序後的檔案資料 (v19 - 關鍵修正)
                 const orderedFileData = [];
                 const listItems = fileList.querySelectorAll('li');
                 
                 listItems.forEach(li => {
                     const originalIndex = parseInt(li.dataset.originalIndex, 10);
-                    // 從 fileDataStore 尋找 (我們 v19 的刪除邏輯會保持 store 同步)
                     const fileInfo = fileDataStore.find(f => f.originalIndex === originalIndex);
                     if (fileInfo) {
                         orderedFileData.push(fileInfo);
                     }
                 });
 
-                // 3. 建立新的 PDF 文件
                 const mergedPdf = await PDFDocument.create();
                 
                 let failedPages = 0; 
                 let failedFiles = 0; 
                 let successPages = 0;
 
-                // 4. 遍歷每一個檔案
                 for (const fileInfo of orderedFileData) {
-                    
                     let sourcePdf;
                     try {
-                         // [v19] 我們使用 fileDataStore 中已讀取的 data
-                         sourcePdf = await PDFDocument.load(fileInfo.data);
+                        sourcePdf = await PDFDocument.load(fileInfo.data);
                     } catch (err) {
                         console.warn(`檔案 "${fileInfo.name}" 載入失敗，已跳過。`, err);
                         failedFiles++;
                         continue; 
                     }
 
-                    // ----------------------------------------------------
-                    // 路徑 A: 僅合併 (最快，預設)
-                    // ----------------------------------------------------
                     if (layoutKey === 'fast') {
                         try {
                             const copiedPageIndices = sourcePdf.getPageIndices();
@@ -547,64 +588,45 @@
                             copiedPages.forEach(page => mergedPdf.addPage(page));
                             successPages += copiedPages.length;
                         } catch (err) {
-                             failedFiles++; // 整個檔案複製失敗
+                             failedFiles++;
                              console.warn(`(Fast Path) 檔案 "${fileInfo.name}" 複製失敗，已跳過: ${err.message}`);
                         }
-                    
-                    // ----------------------------------------------------
-                    // 路徑 B: 統一為直向 / 橫向 (v18 Hybrid 邏輯)
-                    // ----------------------------------------------------
                     } else { 
-                        const targetOrientation = layoutKey; // "Portrait" 或 "Landscape"
-                        
-                        // [v18] 我們仍然使用 copyPages 來穩定地獲取頁面
-                        // 但我們是在一個臨時的 PDF context 中做這件事
+                        const targetOrientation = layoutKey;
                         const tempDoc = await PDFDocument.create();
                         const copiedPageIndices = sourcePdf.getPageIndices();
                         const copiedPages = await tempDoc.copyPages(sourcePdf, copiedPageIndices);
 
-                        // 遍歷「已複製」的頁面
                         for (const copiedPage of copiedPages) {
-                            
                             try {
                                 const { width: origWidth, height: origHeight } = copiedPage.getSize();
 
-                                // 5a. 檢查原始頁面
                                 if (!isFinite(origWidth) || origWidth <= 0 || !isFinite(origHeight) || origHeight <= 0) {
                                     throw new Error("原始頁面尺寸無效 (<= 0 或 NaN)。");
                                 }
                                 const isOriginalPortrait = origHeight >= origWidth;
 
-                                // 5b. 決定目標畫布尺寸
                                 const [targetWidth, targetHeight] = PAGE_SIZES[sizeKey][targetOrientation];
                                 const isTargetPortrait = targetHeight >= targetWidth;
 
-                                // 5c. [v18] 決定是否需要旋轉
                                 let rotationDegrees = 0;
                                 if (isOriginalPortrait !== isTargetPortrait) {
                                     rotationDegrees = (rotationKey === 'CCW') ? -90 : 90;
                                 }
 
-                                // 5d. [v18] 建立一個新的「空白頁面」在「最終文件」上
                                 const newPage = mergedPdf.addPage([targetWidth, targetHeight]);
-
-                                // 5e. [v18] 將「複製的頁面」嵌入到「最終文件」
-                                // 這是最關鍵的一步：embed(copiedPage) 而不是 embed(sourcePage)
                                 const embeddedPage = await mergedPdf.embedPage(copiedPage);
 
-                                // 5f. 計算縮放和位置
                                 const calcWidth = rotationDegrees !== 0 ? origHeight : origWidth;
                                 const calcHeight = rotationDegrees !== 0 ? origWidth : origHeight;
 
                                 const scale = Math.min(targetWidth / calcWidth, targetHeight / calcHeight);
-                                
                                 const scaledWidth = calcWidth * scale;
                                 const scaledHeight = calcHeight * scale;
                                 
-                                // 5g. [v18] 將嵌入的頁面「繪製」到 newPage 上
                                 newPage.drawPage(embeddedPage, {
-                                    x: (targetWidth - scaledWidth) / 2, // 置中
-                                    y: (targetHeight - scaledHeight) / 2, // 置中
+                                    x: (targetWidth - scaledWidth) / 2,
+                                    y: (targetHeight - scaledHeight) / 2,
                                     width: scaledWidth,
                                     height: scaledHeight,
                                     rotate: degrees(rotationDegrees),
@@ -613,15 +635,13 @@
                                 successPages++;
 
                             } catch (err) {
-                                // 捕捉此單一頁面的錯誤 (例如 "Missing Contents" 或 embed(copiedPage) 失敗)
                                 failedPages++; 
                                 console.warn(`(Advanced Path v18) 跳過檔案 "${fileInfo.name}" 的某一頁: ${err.message}`);
                             }
-                        } // end page loop
-                    } // end else
-                } // end file loop
+                        }
+                    }
+                }
 
-                // 6. 處理最終結果
                 if (successPages === 0) {
                     if (failedFiles > 0 || failedPages > 0) {
                         status.textContent = `處理失敗：共 ${failedFiles} 個檔案、${failedPages} 頁因格式錯誤而無法處理。`;
@@ -632,45 +652,171 @@
                     return;
                 }
 
-                // 7. 儲存並下載
                 const mergedPdfBytes = await mergedPdf.save();
-                const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+                const mergedBytes = mergedPdfBytes instanceof Uint8Array ? mergedPdfBytes : new Uint8Array(mergedPdfBytes);
+                const blob = new Blob([mergedBytes], { type: 'application/pdf' });
 
-                // 先預覽合併結果，再讓使用者下載
-                // 防止記憶體洩漏：釋放先前的預覽 URL（若有）
                 if (currentPreviewUrl) {
                     URL.revokeObjectURL(currentPreviewUrl);
                 }
                 currentPreviewUrl = URL.createObjectURL(blob);
-                // 取得使用者輸入的檔名（若為空則使用預設）
                 const outName = ensurePdfExtension(outputNameInput ? outputNameInput.value : '');
                 currentPreviewFilename = outName;
-                 // 設定 iframe 與標題
-                 previewIframe.src = currentPreviewUrl;
-                 previewTitle.textContent = `合併預覽：${outName}`;
-                 previewIsMerged = true;
-                 downloadPreviewBtn.classList.remove('hidden');
-                 // 顯示 Modal（淡入）
-                 previewModal.classList.remove('hidden');
-                 setTimeout(() => previewModal.classList.remove('opacity-0'), 10);
- 
-                 if (failedFiles > 0 || failedPages > 0) {
-                     status.textContent = `處理完成！(成功 ${successPages} 頁，${failedPages} 頁因錯誤被跳過)`;
-                 } else {
-                     status.textContent = `處理完成！(共 ${successPages} 頁)`;
-                 }
-                 mergeBtn.disabled = false;
- 
-             } catch (error) {
-                 console.error("合併過程中發生未預期的錯誤:", error);
-                 status.textContent = `發生致命錯誤：${error.message}`;
-                 mergeBtn.disabled = false;
-             }
-     });
-    
-    // 當 Modal 關閉時，若是合併預覽且使用者未下載，可保留或釋放 URL
-    // 目前 closePreviewModal 會釋放 currentPreviewUrl，因此無需額外處理
- </script>
+
+                await openPdfViewer({
+                    bytes: mergedBytes,
+                    title: `合併預覽：${outName}`,
+                    filename: outName,
+                    isMerged: true,
+                });
+
+                if (failedFiles > 0 || failedPages > 0) {
+                    status.textContent = `處理完成！(成功 ${successPages} 頁，${failedPages} 頁因錯誤被跳過)`;
+                } else {
+                    status.textContent = `處理完成！(共 ${successPages} 頁)`;
+                }
+                mergeBtn.disabled = false;
+
+            } catch (error) {
+                console.error("合併過程中發生未預期的錯誤:", error);
+                status.textContent = `發生致命錯誤：${error.message}`;
+                mergeBtn.disabled = false;
+            }
+        });
+        
+        async function openPdfViewer({ bytes, title, filename, isMerged }) {
+            if (!pdfjsLib) {
+                throw new Error('PDF.js 尚未載入。');
+            }
+            pdfDocInstance = null;
+            if (pdfRenderTask) {
+                pdfRenderTask.cancel();
+                pdfRenderTask = null;
+            }
+
+            previewTitle.textContent = title;
+            previewIsMerged = isMerged;
+            currentPreviewFilename = filename;
+            downloadPreviewBtn.classList.remove('hidden');
+
+            pdfCurrentScale = 1;
+            pdfLoader.classList.remove('hidden');
+            pdfCanvas.classList.add('hidden');
+            prevPageBtn.disabled = true;
+            nextPageBtn.disabled = true;
+            zoomOutBtn.disabled = true;
+            zoomInBtn.disabled = true;
+            currentPageLabel.textContent = '0';
+            totalPagesLabel.textContent = '0';
+            zoomPercentLabel.textContent = '100%';
+
+            try {
+                pdfDocInstance = await pdfjsLib.getDocument({ data: bytes }).promise;
+                pdfTotalPages = pdfDocInstance.numPages;
+
+                previewModal.classList.remove('hidden');
+                setTimeout(() => previewModal.classList.remove('opacity-0'), 10);
+
+                await renderPdfPage(1);
+            } catch (err) {
+                console.error('載入 PDF 預覽失敗:', err);
+                status.textContent = `預覽載入失敗：${err.message}`;
+                resetPdfViewer();
+                previewModal.classList.add('opacity-0');
+                setTimeout(() => previewModal.classList.add('hidden'), 200);
+                throw err;
+            }
+        }
+
+        async function renderPdfPage(pageNumber) {
+            if (!pdfDocInstance) return;
+            pdfLoader.classList.remove('hidden');
+            pdfCanvas.classList.add('hidden');
+            if (pdfRenderTask) {
+                pdfRenderTask.cancel();
+            }
+            try {
+                const page = await pdfDocInstance.getPage(pageNumber);
+                const viewport = page.getViewport({ scale: pdfCurrentScale });
+                const outputScale = window.devicePixelRatio || 1;
+                pdfCanvas.width = viewport.width * outputScale;
+                pdfCanvas.height = viewport.height * outputScale;
+                pdfCanvas.style.width = `${viewport.width}px`;
+                pdfCanvas.style.height = `${viewport.height}px`;
+                const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+                const renderContext = {
+                    canvasContext: pdfContext,
+                    viewport,
+                    transform,
+                };
+                let renderCancelled = false;
+                pdfRenderTask = page.render(renderContext);
+                try {
+                    await pdfRenderTask.promise;
+                } catch (err) {
+                    if (err?.name === 'RenderingCancelledException') {
+                        renderCancelled = true;
+                    } else {
+                        throw err;
+                    }
+                } finally {
+                    pdfRenderTask = null;
+                }
+                if (renderCancelled || !pdfDocInstance) {
+                    return;
+                }
+
+                pdfCurrentPage = pageNumber;
+                currentPageLabel.textContent = pageNumber;
+                totalPagesLabel.textContent = pdfTotalPages;
+                zoomPercentLabel.textContent = `${Math.round(pdfCurrentScale * 100)}%`;
+                prevPageBtn.disabled = pageNumber <= 1;
+                nextPageBtn.disabled = pageNumber >= pdfTotalPages;
+                zoomOutBtn.disabled = pdfCurrentScale <= MIN_ZOOM;
+                zoomInBtn.disabled = pdfCurrentScale >= MAX_ZOOM;
+
+                pdfLoader.classList.add('hidden');
+                pdfCanvas.classList.remove('hidden');
+            } catch (err) {
+                pdfLoader.classList.add('hidden');
+                pdfCanvas.classList.add('hidden');
+                if (err?.name === 'RenderingCancelledException') {
+                    return;
+                }
+                console.error('頁面繪製失敗:', err);
+                status.textContent = `頁面繪製失敗：${err.message}`;
+                throw err;
+            }
+        }
+
+        function resetPdfViewer() {
+            if (pdfRenderTask) {
+                pdfRenderTask.cancel();
+                pdfRenderTask = null;
+            }
+            pdfDocInstance = null;
+            pdfCurrentPage = 1;
+            pdfTotalPages = 0;
+            pdfCurrentScale = 1;
+            previewIsMerged = false;
+            currentPreviewFilename = null;
+
+            pdfCanvas.width = 0;
+            pdfCanvas.height = 0;
+            pdfCanvas.classList.add('hidden');
+            pdfLoader.classList.add('hidden');
+
+            prevPageBtn.disabled = true;
+            nextPageBtn.disabled = true;
+            zoomOutBtn.disabled = true;
+            zoomInBtn.disabled = true;
+            currentPageLabel.textContent = '0';
+            totalPagesLabel.textContent = '0';
+            zoomPercentLabel.textContent = '100%';
+
+            downloadPreviewBtn.classList.add('hidden');
+        }
+    </script>
  
  </body>
  </html>
