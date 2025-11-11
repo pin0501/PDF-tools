@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF 合併工具 (v22 - UI 更新)</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 pdf-lib 函式庫 (合併核心) -->
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <!-- 載入 Sortable.js (拖曳排序功能) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <style>
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            cursor: pointer;
+        }
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            font-size: 100px;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .file-input-button {
+            cursor: pointer;
+        }
+        .sortable-ghost {
+            background-color: #ebf8ff;
+            opacity: 0.7;
+            border: 2px dashed #3182ce;
+        }
+        .sortable-chosen {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        /* 禁用下拉選單的樣式 */
+        select:disabled {
+            background-color: #f3f4f6; /* 淺灰色背景 */
+            color: #9ca3af; /* 灰色文字 */
+            cursor: not-allowed;
+        }
+        /* [v20] 預覽 Modal 樣式 */
+        #preview-modal {
+            transition: opacity 0.2s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans min-h-screen flex items-center justify-center">
+
+    <div class="bg-white rounded-lg shadow-xl p-8 max-w-2xl w-full m-4">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">PDF 合併工具</h1>
+        
+        <p class="text-gray-600 text-center mb-6">請選擇多個 PDF 檔案，然後**用滑鼠拖曳**來調整您要的合併順序。</p>
+
+        <!-- 檔案上傳區塊 (v22 UI 更新) -->
+        <div class="mb-6">
+            <div class="file-input-wrapper w-full">
+                <label for="file-upload" class="file-input-button w-full flex flex-col justify-center items-center px-6 py-8 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg hover:bg-gray-100 transition-colors">
+                    <!-- [v22] 更新的圖示 -->
+                    <svg class="w-12 h-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-4-4V6a4 4 0 014-4h.5a3.5 3.5 0 013.5 3.5M7 16v4m0 0H4m3 0h4m-4 0v-4m3 4v-4m-3-12h.5A3.5 3.5 0 0114 8v4a4 4 0 01-4 4H7m0-8v8m0 0c0 1.657 1.343 3 3 3h1m6.142-7.5l-2.042-2.042a.5.5 0 00-.707 0L10.293 12.148a.5.5 0 000 .707l2.042 2.042a.5.5 0 00.707 0l4.143-4.143a.5.5 0 000-.707z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 11.5V13a2 2 0 01-2 2H7m7-3.5V8a3.5 3.5 0 00-3.5-3.5H7"></path></svg> <!-- 簡化了圖示 -->
+                    <span class="mt-4 text-gray-600 font-medium">點擊選擇檔案</span>
+                    <span class="mt-1 text-sm text-gray-500">或將檔案拖曳至此</span>
+                </label>
+                <input id="file-upload" type="file" accept="application/pdf" multiple>
+            </div>
+        </div>
+
+        <!-- 檔案列表 (可拖曳) -->
+        <div id="file-list-container" class="mb-6 hidden">
+            <h3 class="text-lg font-semibold text-gray-700 mb-2">已選擇的檔案 (請拖曳調整順序)：</h3>
+            <ul id="file-list" class="space-y-2 bg-gray-50 p-4 rounded-md border border-gray-200">
+                <!-- JavaScript 將會動態插入可拖曳的 li 項目 -->
+            </ul>
+        </div>
+
+        <!-- 選項容器 (v18) -->
+        <div id="options-container" class="mb-6 hidden">
+            <!-- RWD 佈局：手機堆疊 (grid-cols-1)，寬螢幕並排 (sm:grid-cols-3) -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 sm:gap-4 space-y-4 sm:space-y-0">
+
+                <!-- 1. 版面配置 (使用者目的) -->
+                <div>
+                    <label for="layout-select" class="block text-sm font-semibold text-gray-700 mb-2">1. 版面配置：</label>
+                    <div class="relative">
+                        <select id="layout-select" class="w-full p-3 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
+                            <option value="fast" selected>僅合併 (最快，預設)</option>
+                            <option value="Portrait">統一為直向</option>
+                            <option value="Landscape">統一為橫向</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-700">
+                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 頁面大小 (僅在 "統一" 時啟用) -->
+                <div>
+                    <label for="page-size-select" class="block text-sm font-semibold text-gray-700 mb-2">2. 頁面大小 (若統一)：</label>
+                    <div class="relative">
+                        <select id="page-size-select" class="w-full p-3 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none" disabled>
+                            <option value="A4" selected>A4</option>
+                            <option value="A3">A3</option>
+                            <option value="A5">A5</option>
+                            <option value="Letter">Letter</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-700">
+                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. [v18] 旋轉方向 (僅在 "統一" 時顯示) -->
+                <div id="rotation-select-container" class="hidden">
+                    <label for="rotation-select" class="block text-sm font-semibold text-gray-700 mb-2">3. 不同方向頁面旋轉：</label>
+                    <div class="relative">
+                        <select id="rotation-select" class="w-full p-3 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
+                            <option value="CW" selected>自動 (順時針 +90°)</option>
+                            <option value="CCW">逆時針 (-90°)</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-700">
+                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- 合併按鈕 -->
+        <button id="merge-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors shadow-md disabled:bg-gray-300" disabled>
+            合併 PDF
+        </button>
+
+        <!-- 狀態訊息 -->
+        <div id="status" class="text-center text-gray-500 mt-4"></div>
+        
+    </div>
+
+    <!-- [v20] 預覽 Modal -->
+    <div id="preview-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden opacity-0">
+        <div class="bg-white rounded-lg shadow-2xl w-full h-full max-w-4xl max-h-[90vh] flex flex-col">
+            <!-- Modal 標題和關閉按鈕 -->
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 id="preview-title" class="text-lg font-semibold text-gray-800">預覽檔案</h3>
+                <button id="close-preview-btn" class="text-gray-500 hover:text-gray-800">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <!-- Modal 內容 (iframe) -->
+            <div class="flex-grow p-4 bg-gray-100">
+                <iframe id="preview-iframe" class="w-full h-full border-0" src="about:blank"></iframe>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        const { PDFDocument, degrees } = PDFLib;
+
+        // 定義標準頁面大小 (Portrait, Landscape)
+        const PAGE_SIZES = {
+            'A4': { 'Portrait': [595.28, 841.89], 'Landscape': [841.89, 595.28] },
+            'A3': { 'Portrait': [841.89, 1190.55], 'Landscape': [1190.55, 841.89] },
+            'A5': { 'Portrait': [419.53, 595.28], 'Landscape': [595.28, 419.53] },
+            'Letter': { 'Portrait': [612, 792], 'Landscape': [792, 612] },
+        };
+
+        const fileUpload = document.getElementById('file-upload');
+        const fileListContainer = document.getElementById('file-list-container');
+        const fileList = document.getElementById('file-list');
+        const optionsContainer = document.getElementById('options-container'); 
+        const mergeBtn = document.getElementById('merge-btn');
+        const status = document.getElementById('status');
+        
+        // v18 UI 元素
+        const layoutSelect = document.getElementById('layout-select');
+        const pageSizeSelect = document.getElementById('page-size-select');
+        const rotationSelectContainer = document.getElementById('rotation-select-container');
+        const rotationSelect = document.getElementById('rotation-select');
+
+        // [v20] Modal 元素
+        const previewModal = document.getElementById('preview-modal');
+        const closePreviewBtn = document.getElementById('close-preview-btn');
+        const previewIframe = document.getElementById('preview-iframe');
+        const previewTitle = document.getElementById('preview-title');
+        
+        let fileDataStore = []; // 儲存 { name, data, originalIndex, orientation }
+        let sortableInstance = null; // 存放 Sortable 實體
+        let currentPreviewUrl = null; // [v20] 儲存當前的預覽 URL 以便釋放
+
+        // --- [v18] UI 連動 ---
+        layoutSelect.addEventListener('change', () => {
+            if (layoutSelect.value === 'fast') {
+                pageSizeSelect.disabled = true;
+                rotationSelectContainer.classList.add('hidden'); // 隱藏旋轉選項
+            } else {
+                pageSizeSelect.disabled = false;
+                rotationSelectContainer.classList.remove('hidden'); // 顯示旋轉選項
+            }
+        });
+
+        // --- [v19] 輔助函式：根據方向取得標籤顏色 ---
+        function getOrientationBadge(orientation) {
+            switch (orientation) {
+                case "直向":
+                    return '<span class="text-xs font-medium px-2 py-0.5 rounded bg-blue-100 text-blue-800">直向</span>';
+                case "橫向":
+                    return '<span class="text-xs font-medium px-2 py-0.5 rounded bg-green-100 text-green-800">橫向</span>';
+                case "混合":
+                    return '<span class="text-xs font-medium px-2 py-0.5 rounded bg-yellow-100 text-yellow-800">混合</span>';
+                case "空":
+                    return '<span class="text-xs font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-800">空</span>';
+                case "已損壞":
+                    return '<span class="text-xs font-medium px-2 py-0.5 rounded bg-red-100 text-red-800">已損壞</span>';
+                default:
+                    return `<span class="text-xs font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-800">${orientation}</span>`;
+            }
+        }
+
+        // --- 檔案上傳事件 (v19 重構) ---
+        fileUpload.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files); 
+            
+            // 重置 UI 和資料儲存
+            fileList.innerHTML = '';
+            fileDataStore = [];
+            
+            if (files.length > 0) {
+                status.textContent = `正在讀取 ${files.length} 個檔案...`;
+                mergeBtn.disabled = true;
+                fileListContainer.classList.add('hidden');
+                optionsContainer.classList.add('hidden');
+
+                try {
+                    // [v19] 平行讀取所有檔案並辨識方向
+                    fileDataStore = await Promise.all(
+                        files.map(async (file, index) => {
+                            const data = await file.arrayBuffer(); 
+                            let orientationLabel = "未知";
+
+                            try {
+                                // [v19] 立即載入 PDF 以進行辨識
+                                const pdfDoc = await PDFDocument.load(data);
+                                const pages = pdfDoc.getPages();
+                                let portraitCount = 0;
+                                let landscapeCount = 0;
+
+                                if (pages.length === 0) {
+                                    orientationLabel = "空";
+                                } else {
+                                    for (const page of pages) {
+                                        const { width, height } = page.getSize();
+                                        if (height >= width) {
+                                            portraitCount++;
+                                        } else {
+                                            landscapeCount++;
+                                        }
+                                    }
+
+                                    if (landscapeCount > 0 && portraitCount === 0) {
+                                        orientationLabel = "橫向";
+                                    } else if (portraitCount > 0 && landscapeCount === 0) {
+                                        orientationLabel = "直向";
+                                    } else if (portraitCount > 0 && landscapeCount > 0) {
+                                        orientationLabel = "混合";
+                                    }
+                                }
+
+                            } catch (err) {
+                                console.warn(`檔案 "${file.name}" 讀取失敗，可能已損壞。`, err);
+                                orientationLabel = "已損壞";
+                            }
+                            
+                            return {
+                                name: file.name,
+                                data: data, // 我們保留 arrayBuffer 以便後續合併
+                                originalIndex: index,
+                                orientation: orientationLabel
+                            };
+                        })
+                    );
+                    
+                    // [v19] 更新 UI 列表
+                    fileListContainer.classList.remove('hidden');
+                    optionsContainer.classList.remove('hidden');
+                    
+                    fileDataStore.forEach((fileInfo) => {
+                        const li = document.createElement('li');
+                        li.dataset.originalIndex = fileInfo.originalIndex;
+                        li.className = 'text-gray-700 p-3 bg-white border rounded-md shadow-sm flex items-center justify-between select-none';
+                        
+                        // [v20] 列表項目的 HTML (包含拖曳、名稱、標籤、預覽、刪除)
+                        li.innerHTML = `
+                            <div class="flex items-center min-w-0">
+                                <svg class="w-5 h-5 text-gray-400 mr-3 flex-shrink-0 cursor-move" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                                <span class="truncate" title="${fileInfo.name}">${fileInfo.name}</span>
+                            </div>
+                            <div class="flex items-center flex-shrink-0 ml-4 space-x-3">
+                                ${getOrientationBadge(fileInfo.orientation)}
+                                <button data-index-to-preview="${fileInfo.originalIndex}" class="preview-btn text-gray-400 hover:text-blue-500 transition-colors" title="預覽檔案">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z"></path></svg>
+                                </button>
+                                <button data-index-to-delete="${fileInfo.originalIndex}" class="delete-btn text-gray-400 hover:text-red-500 transition-colors" title="刪除檔案">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+                            </div>
+                        `;
+                        fileList.appendChild(li);
+                    });
+
+                    mergeBtn.disabled = false;
+                    status.textContent = '檔案已載入，請拖曳排序。';
+
+                    // 初始化拖曳
+                    if (sortableInstance) sortableInstance.destroy();
+                    sortableInstance = new Sortable(fileList, {
+                        animation: 150, 
+                        ghostClass: 'sortable-ghost', 
+                        chosenClass: 'sortable-chosen', 
+                    });
+
+                } catch (error) {
+                    console.error("讀取檔案時出錯:", error);
+                    status.textContent = `讀取檔案失敗：${error.message}`;
+                    mergeBtn.disabled = true;
+                }
+
+            } else {
+                // 沒有選擇檔案，重置 UI
+                fileListContainer.classList.add('hidden');
+                optionsContainer.classList.add('hidden');
+                mergeBtn.disabled = true;
+                if (sortableInstance) {
+                    sortableInstance.destroy();
+                    sortableInstance = null;
+                }
+            }
+        });
+
+        // --- [v21] 檔案列表點擊事件 (包含刪除 & 預覽修正) ---
+        fileList.addEventListener('click', (e) => {
+            const deleteBtn = e.target.closest('.delete-btn');
+            const previewBtn = e.target.closest('.preview-btn');
+            
+            // 處理刪除
+            if (deleteBtn) {
+                const indexToDelete = parseInt(deleteBtn.dataset.indexToDelete, 10);
+                
+                // 1. 從資料儲存中移除
+                fileDataStore = fileDataStore.filter(f => f.originalIndex !== indexToDelete);
+                
+                // 2. 從 DOM 中移除
+                deleteBtn.closest('li').remove();
+                
+                // 3. 檢查是否清空
+                if (fileDataStore.length === 0) {
+                    fileListContainer.classList.add('hidden');
+                    optionsContainer.classList.add('hidden');
+                    mergeBtn.disabled = true;
+                    status.textContent = '所有檔案均已移除。';
+                }
+                return; // 結束，避免觸發預覽
+            }
+
+            // 處理預覽
+            if (previewBtn) {
+                const indexToPreview = parseInt(previewBtn.dataset.indexToPreview, 10);
+                const fileInfo = fileDataStore.find(f => f.originalIndex === indexToPreview);
+                
+                if (fileInfo) {
+                    // [v21] 檢查檔案是否已損壞
+                    if (fileInfo.orientation === "已損壞") {
+                        status.textContent = `無法預覽：檔案 "${fileInfo.name}" 已損壞。`;
+                        return;
+                    }
+                    showPreviewModal(fileInfo);
+                }
+            }
+        });
+
+        // --- [v20] 顯示預覽 Modal ---
+        function showPreviewModal(fileInfo) {
+            // 防止記憶體洩漏：如果已存在一個 URL，先釋放它
+            if (currentPreviewUrl) {
+                URL.revokeObjectURL(currentPreviewUrl);
+            }
+
+            // 建立新的 Blob URL
+            const blob = new Blob([fileInfo.data], { type: 'application/pdf' });
+            currentPreviewUrl = URL.createObjectURL(blob);
+
+            // 設定 iframe 和標題
+            previewIframe.src = currentPreviewUrl;
+            previewTitle.textContent = `預覽：${fileInfo.name}`;
+
+            // 顯示 Modal
+            previewModal.classList.remove('hidden');
+            setTimeout(() => previewModal.classList.remove('opacity-0'), 10); // 觸發淡入
+        }
+
+        // --- [v20] 關閉預覽 Modal ---
+        function closePreviewModal() {
+            // 淡出
+            previewModal.classList.add('opacity-0');
+            setTimeout(() => {
+                previewModal.classList.add('hidden');
+                
+                // 釋放記憶體
+                if (currentPreviewUrl) {
+                    URL.revokeObjectURL(currentPreviewUrl);
+                    currentPreviewUrl = null;
+                }
+                // 清空 iframe
+                previewIframe.src = 'about:blank';
+                previewTitle.textContent = '預覽檔案';
+            }, 200); // 配合 transition-duration
+        }
+
+        closePreviewBtn.addEventListener('click', closePreviewModal);
+
+
+        // --- 合併按鈕事件 (v18 核心邏輯) ---
+        mergeBtn.addEventListener('click', async () => {
+            if (fileList.querySelectorAll('li').length < 1) {
+                status.textContent = '請至少選擇一個 PDF 檔案。';
+                return;
+            }
+
+            try {
+                status.textContent = '處理中... 請稍候...';
+                mergeBtn.disabled = true;
+
+                // 1. 獲取 UI 選項
+                const layoutKey = layoutSelect.value;
+                const sizeKey = pageSizeSelect.value;
+                const rotationKey = rotationSelect.value; // "CW" or "CCW"
+
+                // 2. 獲取排序後的檔案資料 (v19 - 關鍵修正)
+                const orderedFileData = [];
+                const listItems = fileList.querySelectorAll('li');
+                
+                listItems.forEach(li => {
+                    const originalIndex = parseInt(li.dataset.originalIndex, 10);
+                    // 從 fileDataStore 尋找 (我們 v19 的刪除邏輯會保持 store 同步)
+                    const fileInfo = fileDataStore.find(f => f.originalIndex === originalIndex);
+                    if (fileInfo) {
+                        orderedFileData.push(fileInfo);
+                    }
+                });
+
+                // 3. 建立新的 PDF 文件
+                const mergedPdf = await PDFDocument.create();
+                
+                let failedPages = 0; 
+                let failedFiles = 0; 
+                let successPages = 0;
+
+                // 4. 遍歷每一個檔案
+                for (const fileInfo of orderedFileData) {
+                    
+                    let sourcePdf;
+                    try {
+                         // [v19] 我們使用 fileDataStore 中已讀取的 data
+                         sourcePdf = await PDFDocument.load(fileInfo.data);
+                    } catch (err) {
+                        console.warn(`檔案 "${fileInfo.name}" 載入失敗，已跳過。`, err);
+                        failedFiles++;
+                        continue; 
+                    }
+
+                    // ----------------------------------------------------
+                    // 路徑 A: 僅合併 (最快，預設)
+                    // ----------------------------------------------------
+                    if (layoutKey === 'fast') {
+                        try {
+                            const copiedPageIndices = sourcePdf.getPageIndices();
+                            const copiedPages = await mergedPdf.copyPages(sourcePdf, copiedPageIndices);
+                            copiedPages.forEach(page => mergedPdf.addPage(page));
+                            successPages += copiedPages.length;
+                        } catch (err) {
+                             failedFiles++; // 整個檔案複製失敗
+                             console.warn(`(Fast Path) 檔案 "${fileInfo.name}" 複製失敗，已跳過: ${err.message}`);
+                        }
+                    
+                    // ----------------------------------------------------
+                    // 路徑 B: 統一為直向 / 橫向 (v18 Hybrid 邏輯)
+                    // ----------------------------------------------------
+                    } else { 
+                        const targetOrientation = layoutKey; // "Portrait" 或 "Landscape"
+                        
+                        // [v18] 我們仍然使用 copyPages 來穩定地獲取頁面
+                        // 但我們是在一個臨時的 PDF context 中做這件事
+                        const tempDoc = await PDFDocument.create();
+                        const copiedPageIndices = sourcePdf.getPageIndices();
+                        const copiedPages = await tempDoc.copyPages(sourcePdf, copiedPageIndices);
+
+                        // 遍歷「已複製」的頁面
+                        for (const copiedPage of copiedPages) {
+                            
+                            try {
+                                const { width: origWidth, height: origHeight } = copiedPage.getSize();
+
+                                // 5a. 檢查原始頁面
+                                if (!isFinite(origWidth) || origWidth <= 0 || !isFinite(origHeight) || origHeight <= 0) {
+                                    throw new Error("原始頁面尺寸無效 (<= 0 或 NaN)。");
+                                }
+                                const isOriginalPortrait = origHeight >= origWidth;
+
+                                // 5b. 決定目標畫布尺寸
+                                const [targetWidth, targetHeight] = PAGE_SIZES[sizeKey][targetOrientation];
+                                const isTargetPortrait = targetHeight >= targetWidth;
+
+                                // 5c. [v18] 決定是否需要旋轉
+                                let rotationDegrees = 0;
+                                if (isOriginalPortrait !== isTargetPortrait) {
+                                    rotationDegrees = (rotationKey === 'CCW') ? -90 : 90;
+                                }
+
+                                // 5d. [v18] 建立一個新的「空白頁面」在「最終文件」上
+                                const newPage = mergedPdf.addPage([targetWidth, targetHeight]);
+
+                                // 5e. [v18] 將「複製的頁面」嵌入到「最終文件」
+                                // 這是最關鍵的一步：embed(copiedPage) 而不是 embed(sourcePage)
+                                const embeddedPage = await mergedPdf.embedPage(copiedPage);
+
+                                // 5f. 計算縮放和位置
+                                const calcWidth = rotationDegrees !== 0 ? origHeight : origWidth;
+                                const calcHeight = rotationDegrees !== 0 ? origWidth : origHeight;
+
+                                const scale = Math.min(targetWidth / calcWidth, targetHeight / calcHeight);
+                                
+                                const scaledWidth = calcWidth * scale;
+                                const scaledHeight = calcHeight * scale;
+                                
+                                // 5g. [v18] 將嵌入的頁面「繪製」到 newPage 上
+                                newPage.drawPage(embeddedPage, {
+                                    x: (targetWidth - scaledWidth) / 2, // 置中
+                                    y: (targetHeight - scaledHeight) / 2, // 置中
+                                    width: scaledWidth,
+                                    height: scaledHeight,
+                                    rotate: degrees(rotationDegrees),
+                                });
+
+                                successPages++;
+
+                            } catch (err) {
+                                // 捕捉此單一頁面的錯誤 (例如 "Missing Contents" 或 embed(copiedPage) 失敗)
+                                failedPages++; 
+                                console.warn(`(Advanced Path v18) 跳過檔案 "${fileInfo.name}" 的某一頁: ${err.message}`);
+                            }
+                        } // end page loop
+                    } // end else
+                } // end file loop
+
+                // 6. 處理最終結果
+                if (successPages === 0) {
+                    if (failedFiles > 0 || failedPages > 0) {
+                        status.textContent = `處理失敗：共 ${failedFiles} 個檔案、${failedPages} 頁因格式錯誤而無法處理。`;
+                    } else {
+                        status.textContent = '處理失敗：沒有任何頁面被成功處理。請檢查您的 PDF 檔案。';
+                    }
+                    mergeBtn.disabled = false;
+                    return;
+                }
+
+                // 7. 儲存並下載
+                const mergedPdfBytes = await mergedPdf.save();
+                const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'merged_document.pdf'; 
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                if (failedFiles > 0 || failedPages > 0) {
+                    status.textContent = `處理完成！(成功 ${successPages} 頁，${failedPages} 頁因錯誤被跳過)`;
+                } else {
+                    status.textContent = `處理完成！(共 ${successPages} 頁)`;
+                }
+                mergeBtn.disabled = false;
+
+            } catch (error) {
+                console.error("合併過程中發生未預期的錯誤:", error);
+                status.textContent = `發生致命錯誤：${error.message}`;
+                mergeBtn.disabled = false;
+            }
+        });
+    </script>
+
+</body>
+</html>
