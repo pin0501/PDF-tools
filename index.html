@@ -57,12 +57,105 @@
         }
         .tw-select:focus {
             outline: none;
-            border-color: #3b82f6;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
             background-color: #ffffff;
         }
-        .tw-select:disabled {
+        .tw-select option {
+            background-color: #f9fafb;
+            color: #1f2937;
+            padding: 0.5rem 0.75rem;
+            font-weight: 500;
+        }
+        .tw-select option:hover,
+        .tw-select option:focus,
+        .tw-select option:checked {
+            background-color: #e5edff;
+            color: #1d4ed8;
+        }
+        .custom-select {
+            position: relative;
+        }
+        .custom-select-toggle {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.75rem;
+            background-color: #f9fafb;
+            color: #374151;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+        }
+        .custom-select-toggle:hover {
             background-color: #f3f4f6;
+        }
+        .custom-select.open .custom-select-toggle {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+            background-color: #ffffff;
+        }
+        .custom-select-toggle svg {
+            width: 1rem;
+            height: 1rem;
+            color: #6b7280;
+            transition: transform 0.2s ease;
+        }
+        .custom-select.open .custom-select-toggle svg {
+            transform: rotate(180deg);
+        }
+        .custom-select-toggle--disabled {
+            background-color: #f3f4f6;
+            border-color: #e5e7eb;
             color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .custom-select-toggle--disabled svg {
+            color: #d1d5db;
+        }
+        .custom-select-menu {
+            position: absolute;
+            top: calc(100% + 0.5rem);
+            left: 0;
+            right: 0;
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.9rem;
+            box-shadow: 0 25px 45px rgba(15, 23, 42, 0.12);
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            max-height: 14rem;
+            overflow-y: auto;
+            z-index: 60;
+        }
+        .custom-select-option {
+            border: none;
+            background: transparent;
+            text-align: left;
+            padding: 0.6rem 0.75rem;
+            border-radius: 0.65rem;
+            font-weight: 500;
+            color: #374151;
+            transition: background-color 0.15s ease, color 0.15s ease;
+            cursor: pointer;
+        }
+        .custom-select-option:hover,
+        .custom-select-option:focus {
+            background-color: #eef2ff;
+            color: #1d4ed8;
+        }
+        .custom-select-option.active {
+            background-color: #dbeafe;
+            color: #1d4ed8;
+        }
+        .custom-select-option:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         /* [v20] 預覽 Modal 樣式 */
         #preview-modal {
