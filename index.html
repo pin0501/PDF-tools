@@ -31,30 +31,34 @@
             cursor: pointer;
         }
         .sortable-ghost {
-            background-color: #e1effe;
-            opacity: 0.85;
-            border: 2px dashed #2563eb;
-            transform: scale(1.02) rotate(-1deg);
-            box-shadow: 0 10px 25px rgba(37, 99, 235, 0.2);
+            background-color: #e5e7eb;
+            opacity: 0.7;
         }
-        .sortable-chosen {
-            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.15);
-            transform: scale(1.01);
-        }
+        .sortable-chosen,
         .sortable-drag {
-            cursor: grabbing !important;
+            box-shadow: none;
+            transform: none;
         }
-        #file-list.sorting li {
-            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+        /* 下拉選單統一風格 */
+        .tw-select {
+            width: 100%;
+            padding: 0.75rem 2.75rem 0.75rem 1rem;
+            background-color: #f9fafb;
+            border: 1px solid #d1d5db;
+            border-radius: 0.75rem;
+            color: #374151;
+            font-weight: 500;
+            transition: border-color 0.15s ease-in-out, background-color 0.15s ease-in-out;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 0.85rem;
         }
-        #file-list.sorting li:not(.sortable-ghost) {
-            opacity: 0.9;
-        }
-        /* 禁用下拉選單的樣式 */
-        select:disabled {
-            background-color: #f3f4f6; /* 淺灰色背景 */
-            color: #9ca3af; /* 灰色文字 */
-            cursor: not-allowed;
+        .tw-select:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: none;
         }
         /* [v20] 預覽 Modal 樣式 */
         #preview-modal {
@@ -71,29 +75,6 @@
         @keyframes pulse {
             0%, 100% { opacity: 0.45; }
             50% { opacity: 1; }
-        }
-        /* 下拉選單統一風格 */
-        .tw-select {
-            width: 100%;
-            padding: 0.75rem;
-            background-color: #f9fafb;
-            border: 1px solid #d1d5db;
-            border-radius: 0.75rem;
-            color: #374151;
-            font-weight: 500;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-            transition: all 0.15s ease-in-out;
-            appearance: none;
-        }
-        .tw-select:focus {
-            outline: none;
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-        }
-        .tw-select:disabled {
-            background-color: #f3f4f6;
-            color: #9ca3af;
-            cursor: not-allowed;
         }
     </style>
 </head>
@@ -327,11 +308,12 @@
                 try {
                     fileDataStore = await Promise.all(
                         files.map(async (file, index) => {
-                            const data = await file.arrayBuffer(); 
+                            const arrayBuffer = await file.arrayBuffer();
+                            const bytes = new Uint8Array(arrayBuffer);
                             let orientationLabel = "未知";
 
                             try {
-                                const pdfDoc = await PDFDocument.load(data);
+                                const pdfDoc = await PDFDocument.load(bytes.slice());
                                 const pages = pdfDoc.getPages();
                                 let portraitCount = 0;
                                 let landscapeCount = 0;
@@ -364,7 +346,7 @@
                             
                             return {
                                 name: file.name,
-                                data: data,
+                                data: bytes,
                                 originalIndex: index,
                                 orientation: orientationLabel
                             };
@@ -407,14 +389,7 @@
 
                     if (sortableInstance) sortableInstance.destroy();
                     sortableInstance = new Sortable(fileList, {
-                        animation: 180,
-                        ghostClass: 'sortable-ghost',
-                        chosenClass: 'sortable-chosen',
-                        dragClass: 'sortable-drag',
-                        fallbackOnBody: true,
-                        swapThreshold: 0.6,
-                        onStart: () => fileList.classList.add('sorting'),
-                        onEnd: () => fileList.classList.remove('sorting'),
+                        animation: 150,
                     });
 
                 } catch (error) {
@@ -477,7 +452,7 @@
             if (currentPreviewUrl) {
                 URL.revokeObjectURL(currentPreviewUrl);
             }
-            const bytes = fileInfo.data instanceof Uint8Array ? fileInfo.data : new Uint8Array(fileInfo.data);
+            const bytes = fileInfo.data.slice();
             const blob = new Blob([bytes], { type: 'application/pdf' });
             currentPreviewUrl = URL.createObjectURL(blob);
 
@@ -574,7 +549,7 @@
                 for (const fileInfo of orderedFileData) {
                     let sourcePdf;
                     try {
-                        sourcePdf = await PDFDocument.load(fileInfo.data);
+                        sourcePdf = await PDFDocument.load(fileInfo.data.slice());
                     } catch (err) {
                         console.warn(`檔案 "${fileInfo.name}" 載入失敗，已跳過。`, err);
                         failedFiles++;
@@ -664,7 +639,7 @@
                 currentPreviewFilename = outName;
 
                 await openPdfViewer({
-                    bytes: mergedBytes,
+                    bytes: mergedBytes.slice(),
                     title: `合併預覽：${outName}`,
                     filename: outName,
                     isMerged: true,
