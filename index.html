@@ -87,14 +87,16 @@
     <div class="bg-white rounded-lg shadow-xl p-8 max-w-2xl w-full m-4">
         <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">PDF 合併工具</h1>
         
-        <p class="text-gray-600 text-center mb-6">請選擇多個 PDF 檔案，然後**用滑鼠拖曳**來調整您要的合併順序。</p>
+        <p class="text-gray-600 text-center mb-6">這個工具可快速整理多個 PDF：上傳檔案、拖曳排序，並在下載前預覽最終合併結果。</p>
 
         <!-- 檔案上傳區塊 (v22 UI 更新) -->
         <div class="mb-6">
             <div class="file-input-wrapper w-full">
                 <label for="file-upload" class="file-input-button w-full flex flex-col justify-center items-center px-6 py-8 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg hover:bg-gray-100 transition-colors">
                     <!-- [v22] 更新的圖示 -->
-                    <svg class="w-12 h-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-4-4V6a4 4 0 014-4h.5a3.5 3.5 0 013.5 3.5M7 16v4m0 0H4m3 0h4m-4 0v-4m3 4v-4m-3-12h.5A3.5 3.5 0 0114 8v4a4 4 0 01-4 4H7m0-8v8m0 0c0 1.657 1.343 3 3 3h1m6.142-7.5l-2.042-2.042a.5.5 0 00-.707 0L10.293 12.148a.5.5 0 000 .707l2.042 2.042a.5.5 0 00.707 0l4.143-4.143a.5.5 0 000-.707z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 11.5V13a2 2 0 01-2 2H7m7-3.5V8a3.5 3.5 0 00-3.5-3.5H7"></path></svg> <!-- 簡化了圖示 -->
+                    <svg class="w-14 h-14 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                    </svg>
                     <span class="mt-4 text-gray-600 font-medium">點擊選擇檔案</span>
                     <span class="mt-1 text-sm text-gray-500">或將檔案拖曳至此</span>
                 </label>
@@ -489,6 +491,11 @@
         }
 
         closePreviewBtn.addEventListener('click', closePreviewModal);
+        previewModal.addEventListener('click', (event) => {
+            if (event.target === previewModal) {
+                closePreviewModal();
+            }
+        });
 
         downloadPreviewBtn.addEventListener('click', () => {
             if (!currentPreviewUrl) return;
