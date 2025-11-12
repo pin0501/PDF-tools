@@ -57,8 +57,12 @@
         }
         .tw-select:focus {
             outline: none;
-            border-color: #2563eb;
-            box-shadow: none;
+            border-color: #3b82f6;
+            background-color: #ffffff;
+        }
+        .tw-select:disabled {
+            background-color: #f3f4f6;
+            color: #9ca3af;
         }
         /* [v20] 預覽 Modal 樣式 */
         #preview-modal {
@@ -174,7 +178,7 @@
                 <div class="flex items-center space-x-3">
                     <button id="download-preview-btn" class="text-blue-600 hover:text-blue-800 hidden" title="下載預覽檔">
                         <span class="inline-flex items-center space-x-2 text-sm font-semibold">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12"></path></svg>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 9l5 5 5-5"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v10"></path></svg>
                             <span>下載</span>
                         </span>
                     </button>
@@ -199,9 +203,11 @@
                     <button id="zoom-in-btn" class="px-3 py-1.5 rounded-md border border-gray-300 text-gray-600 hover:text-blue-600 hover:border-blue-400 transition disabled:opacity-50" disabled>+</button>
                 </div>
             </div>
-            <div class="flex-grow bg-gray-100 flex items-center justify-center overflow-auto p-4">
+            <div class="flex-grow bg-gray-100 overflow-auto p-4">
                 <div id="pdf-loader" class="text-gray-500 text-sm hidden">正在載入預覽...</div>
-                <canvas id="pdf-canvas" class="max-h-full hidden"></canvas>
+                <div class="flex justify-center">
+                    <canvas id="pdf-canvas" class="hidden bg-white rounded-lg shadow-lg"></canvas>
+                </div>
             </div>
         </div>
     </div>
@@ -309,11 +315,12 @@
                     fileDataStore = await Promise.all(
                         files.map(async (file, index) => {
                             const arrayBuffer = await file.arrayBuffer();
-                            const bytes = new Uint8Array(arrayBuffer);
+                            const bufferCopy = arrayBuffer.slice(0);
+                            const bytes = new Uint8Array(bufferCopy);
                             let orientationLabel = "未知";
 
                             try {
-                                const pdfDoc = await PDFDocument.load(bytes.slice());
+                                const pdfDoc = await PDFDocument.load(bytes);
                                 const pages = pdfDoc.getPages();
                                 let portraitCount = 0;
                                 let landscapeCount = 0;
@@ -346,7 +353,7 @@
                             
                             return {
                                 name: file.name,
-                                data: bytes,
+                                buffer: bufferCopy,
                                 originalIndex: index,
                                 orientation: orientationLabel
                             };
@@ -390,6 +397,9 @@
                     if (sortableInstance) sortableInstance.destroy();
                     sortableInstance = new Sortable(fileList, {
                         animation: 150,
+                        ghostClass: 'sortable-ghost',
+                        chosenClass: 'sortable-chosen',
+                        dragClass: 'sortable-drag',
                     });
 
                 } catch (error) {
@@ -452,7 +462,8 @@
             if (currentPreviewUrl) {
                 URL.revokeObjectURL(currentPreviewUrl);
             }
-            const bytes = fileInfo.data.slice();
+            const bufferCopy = fileInfo.buffer.slice(0);
+            const bytes = new Uint8Array(bufferCopy);
             const blob = new Blob([bytes], { type: 'application/pdf' });
             currentPreviewUrl = URL.createObjectURL(blob);
 
@@ -549,7 +560,7 @@
                 for (const fileInfo of orderedFileData) {
                     let sourcePdf;
                     try {
-                        sourcePdf = await PDFDocument.load(fileInfo.data.slice());
+                        sourcePdf = await PDFDocument.load(fileInfo.buffer.slice(0));
                     } catch (err) {
                         console.warn(`檔案 "${fileInfo.name}" 載入失敗，已跳過。`, err);
                         failedFiles++;
@@ -568,50 +579,59 @@
                         }
                     } else { 
                         const targetOrientation = layoutKey;
-                        const tempDoc = await PDFDocument.create();
-                        const copiedPageIndices = sourcePdf.getPageIndices();
-                        const copiedPages = await tempDoc.copyPages(sourcePdf, copiedPageIndices);
+                        const pageCount = sourcePdf.getPageCount();
 
-                        for (const copiedPage of copiedPages) {
+                        for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+                            const pageCountBefore = mergedPdf.getPageCount();
                             try {
-                                const { width: origWidth, height: origHeight } = copiedPage.getSize();
-
-                                if (!isFinite(origWidth) || origWidth <= 0 || !isFinite(origHeight) || origHeight <= 0) {
-                                    throw new Error("原始頁面尺寸無效 (<= 0 或 NaN)。");
-                                }
-                                const isOriginalPortrait = origHeight >= origWidth;
-
+                                const sourcePage = sourcePdf.getPage(pageIndex);
+                                const { width: origWidth, height: origHeight } = sourcePage.getSize();
                                 const [targetWidth, targetHeight] = PAGE_SIZES[sizeKey][targetOrientation];
-                                const isTargetPortrait = targetHeight >= targetWidth;
+                                const newPage = mergedPdf.addPage([targetWidth, targetHeight]);
+                                const embeddedPage = await mergedPdf.embedPage(sourcePage);
 
                                 let rotationDegrees = 0;
-                                if (isOriginalPortrait !== isTargetPortrait) {
-                                    rotationDegrees = (rotationKey === 'CCW') ? -90 : 90;
+                                const isSourcePortrait = origHeight >= origWidth;
+                                const targetPortrait = targetOrientation === 'Portrait';
+                                if (isSourcePortrait !== targetPortrait) {
+                                    rotationDegrees = rotationKey === 'CCW' ? -90 : 90;
                                 }
 
-                                const newPage = mergedPdf.addPage([targetWidth, targetHeight]);
-                                const embeddedPage = await mergedPdf.embedPage(copiedPage);
+                                const scale = rotationDegrees === 0
+                                    ? Math.min(targetWidth / origWidth, targetHeight / origHeight)
+                                    : Math.min(targetWidth / origHeight, targetHeight / origWidth);
 
-                                const calcWidth = rotationDegrees !== 0 ? origHeight : origWidth;
-                                const calcHeight = rotationDegrees !== 0 ? origWidth : origHeight;
+                                const scaledWidth = origWidth * scale;
+                                const scaledHeight = origHeight * scale;
 
-                                const scale = Math.min(targetWidth / calcWidth, targetHeight / calcHeight);
-                                const scaledWidth = calcWidth * scale;
-                                const scaledHeight = calcHeight * scale;
-                                
+                                let drawX;
+                                let drawY;
+                                if (rotationDegrees === 0) {
+                                    drawX = (targetWidth - scaledWidth) / 2;
+                                    drawY = (targetHeight - scaledHeight) / 2;
+                                } else if (rotationDegrees > 0) {
+                                    drawX = (targetWidth + scaledHeight) / 2;
+                                    drawY = (targetHeight - scaledWidth) / 2;
+                                } else {
+                                    drawX = (targetWidth - scaledHeight) / 2;
+                                    drawY = (targetHeight + scaledWidth) / 2;
+                                }
+
                                 newPage.drawPage(embeddedPage, {
-                                    x: (targetWidth - scaledWidth) / 2,
-                                    y: (targetHeight - scaledHeight) / 2,
+                                    x: drawX,
+                                    y: drawY,
                                     width: scaledWidth,
                                     height: scaledHeight,
                                     rotate: degrees(rotationDegrees),
                                 });
 
                                 successPages++;
-
                             } catch (err) {
-                                failedPages++; 
-                                console.warn(`(Advanced Path v18) 跳過檔案 "${fileInfo.name}" 的某一頁: ${err.message}`);
+                                failedPages++;
+                                console.warn(`(Advanced Path v22) 跳過檔案 "${fileInfo.name}" 的頁面 ${pageIndex + 1}: ${err.message}`);
+                                if (mergedPdf.getPageCount() > pageCountBefore) {
+                                    mergedPdf.removePage(mergedPdf.getPageCount() - 1);
+                                }
                             }
                         }
                     }
@@ -628,7 +648,7 @@
                 }
 
                 const mergedPdfBytes = await mergedPdf.save();
-                const mergedBytes = mergedPdfBytes instanceof Uint8Array ? mergedPdfBytes : new Uint8Array(mergedPdfBytes);
+                const mergedBytes = mergedPdfBytes instanceof Uint8Array ? mergedPdfBytes.slice() : new Uint8Array(mergedPdfBytes).slice();
                 const blob = new Blob([mergedBytes], { type: 'application/pdf' });
 
                 if (currentPreviewUrl) {
